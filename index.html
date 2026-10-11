@@ -10,7 +10,12 @@
 <title>ميزانية البيت</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap">
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}.brow{cursor:pointer;border-radius:8px}
+.brow:hover{background:var(--sunk)}
+.brow .n::after{content:'‹';color:var(--muted);font-weight:400;margin-inline-start:auto}
+.cathead{display:flex;align-items:center;gap:10px;margin-top:14px}
+.back{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:20px;line-height:1;display:grid;place-items:center}
+</style>
 <style>
 /* Layout: one narrow RTL column, sticky balance header, three tabs switched from a bottom bar. */
 :root{
@@ -243,7 +248,7 @@ const MONTHS_AR=['يناير','فبراير','مارس','أبريل','مايو',
 
 /* ---------- State ---------- */
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh'}).format(new Date());
-const S={tx:[],cfgDoc:null,months:{},ready:false,ym:today().slice(0,7),tab:'log',
+const S={cat:null,tx:[],cfgDoc:null,months:{},ready:false,ym:today().slice(0,7),tab:'log',
   f:null,editId:null,showForm:false,confirmDel:false,editKey:null,dup:null,anchorOpen:false,need:false};
 const blankForm=()=>({t:'expense',c:null,a:'',m:'bank',d:today(),n:''});
 S.f=blankForm();
@@ -472,21 +477,23 @@ function renderForm(){
       ${S.editId?`<button class="btn danger ${S.confirmDel?'on':''}" data-act="del">${S.confirmDel?'تأكيد الحذف':'حذف'}</button>`:''}
     </div></div>`;
 }
+const dayName=d=>{const dt=new Date(d+'T12:00:00+03:00'); return dt.toLocaleDateString('ar-SA-u-ca-gregory-nu-latn',{weekday:'long',day:'numeric',month:'long',timeZone:'Asia/Riyadh'});};
+function txRow(t,inCat){
+    const out=t.t==='expense'||t.t==='work'; const fund=t.t==='fund';
+    const sign=fund?(t.a<0?'سحب':'حجز'):(out?'−':'+');
+    const cls=fund||t.t==='transfer'?'mutedtx':(out?'':'pos');
+    const sub=[t.t!=='expense'?typeName(t.t):'',t.t!=='fund'&&t.t!=='transfer'?methodName(t.m):'',inCat?'':t.n].filter(Boolean).map(esc).join(' · ');
+    const title=inCat?(t.n||(t.t==='refund'?'استرداد':'بدون ملاحظة')):catName(t.t,t.c);
+    return `<button class="tx ${S.editId===t.id?'sel':''}" data-act="edit" data-v="${t.id}">
+      <div class="mid"><div class="t1">${esc(title)}</div><div class="t2">${sub||'&nbsp;'}</div></div>
+      <div class="amt num ${cls}">${fund?sign+' '+fmt(Math.abs(t.a)):sign+fmt(t.a)}</div></button>`;
+  }
 function renderLog(){
   const list=monthTx(S.ym).slice().sort((a,b)=>(b.d||'').localeCompare(a.d||'')||(b.ts||0)-(a.ts||0));
   const byDay={}; list.forEach(t=>(byDay[t.d]=byDay[t.d]||[]).push(t));
   const days=Object.keys(byDay);
   const dayOut=d=>r2(byDay[d].reduce((s,t)=>s+(t.t==='expense'?+t.a:t.t==='refund'?-t.a:0),0));
-  const dname=d=>{const dt=new Date(d+'T12:00:00+03:00'); return dt.toLocaleDateString('ar-SA-u-ca-gregory-nu-latn',{weekday:'long',day:'numeric',month:'long',timeZone:'Asia/Riyadh'});};
-  const row=t=>{
-    const out=t.t==='expense'||t.t==='work'; const fund=t.t==='fund';
-    const sign=fund?(t.a<0?'سحب':'حجز'):(out?'−':'+');
-    const cls=fund||t.t==='transfer'?'mutedtx':(out?'':'pos');
-    const sub=[t.t!=='expense'?typeName(t.t):'',t.t!=='fund'&&t.t!=='transfer'?methodName(t.m):'',t.n].filter(Boolean).map(esc).join(' · ');
-    return `<button class="tx ${S.editId===t.id?'sel':''}" data-act="edit" data-v="${t.id}">
-      <div class="mid"><div class="t1">${esc(catName(t.t,t.c))}</div><div class="t2">${sub||'&nbsp;'}</div></div>
-      <div class="amt num ${cls}">${fund?sign+' '+fmt(Math.abs(t.a)):sign+fmt(t.a)}</div></button>`;
-  };
+  const dname=dayName, row=t=>txRow(t,false);
   return `<section class="card">
     <div class="quick"><input id="q" placeholder="بقالة 120" enterkeyhint="done" autocomplete="off" aria-label="إضافة سريعة"><button class="btn pri" data-act="quick">سجّل</button></div>
     <div class="preview" id="pv"><span>اكتب الفئة والمبلغ. أضف «تيقمو» أو «كريدت» أو «كاش» إذا لم يكن من البنك.</span></div>
@@ -496,6 +503,29 @@ function renderLog(){
   </section>
   ${!S.ready?`<div class="empty">جارٍ تحميل العمليات…</div>`:days.length?days.map(d=>`<div class="day"><div class="dayh"><span>${dname(d)}</span><span class="num">${dayOut(d)?'−'+fmt(dayOut(d)):''}</span></div><div class="txl">${byDay[d].map(row).join('')}</div></div>`).join('')
    :`<div class="empty">لا توجد عمليات في ${ymLabel(S.ym)} بعد.<br>اكتب أول مصروف في الأعلى، مثل «بقالة 120».</div>`}`;
+}
+function renderCat(){
+  const c=CAT[S.cat]; if(!c){ S.cat=null; return renderBudget(); }
+  const ym=S.ym, mc=monthCfg(ym);
+  const list=monthTx(ym).filter(t=>(t.t==='expense'||t.t==='refund')&&t.c===c.id).sort((a,b)=>(b.d||'').localeCompare(a.d||'')||(b.ts||0)-(a.ts||0));
+  const s=r2(spentBy(ym)[c.id]||0), b=mc.budgets[c.id]||0, p=b?s/b:(s>0?2:0), left=r2(b-s);
+  const pa=prevActual(ym,c.id);
+  const byDay={}; list.forEach(t=>(byDay[t.d]=byDay[t.d]||[]).push(t));
+  const days=Object.keys(byDay);
+  const n=list.filter(t=>t.t==='expense').length;
+  const avg=n?s/n:0;
+  return `<div class="cathead"><button class="back" data-act="cat-back" aria-label="رجوع">›</button><h2 style="margin:0">${c.n}</h2></div>
+  <section class="card sum">
+    <div class="big"><span class="v num">${fmt(s)}</span><span class="of">من <span class="num">${fmt(b)}</span></span></div>
+    <div class="bar ${barCls(p)}"><i style="width:${Math.min(100,p*100)}%"></i></div>
+    <div class="kv"><span>${left>=0?'المتبقي':'التجاوز'}</span><span class="num ${left<0?'over':''}">${fmt(Math.abs(left))}</span></div>
+    <div class="kv"><span>عدد العمليات</span><span class="num">${n}</span></div>
+    ${n?`<div class="kv"><span>متوسط العملية</span><span class="num">${fmt(avg)}</span></div>`:''}
+    ${pa!==null&&pa!==undefined?`<div class="kv"><span>${ymLabel(prevYm(ym))}</span><span class="num">${fmt(pa)}</span></div>`:''}
+  </section>
+  ${S.showForm&&S.editId?`<section class="card">${renderForm()}</section>`:''}
+  ${days.length?days.map(d=>`<div class="day"><div class="dayh"><span>${dayName(d)}</span><span class="num">${fmt(byDay[d].reduce((x,t)=>x+(t.t==='refund'?-t.a:+t.a),0))}</span></div><div class="txl">${byDay[d].map(t=>txRow(t,true)).join('')}</div></div>`).join('')
+   :`<div class="empty">لا توجد عمليات في ${c.n} خلال ${ymLabel(ym)}.</div>`}`;
 }
 function barCls(p){ return p>1.001?'bad':p>.85?'warn':''; }
 function budgetEditable(key,val){
@@ -520,7 +550,7 @@ function renderBudget(){
       let st='';
       if(g.id==='fixed'||g.id==='inst') st=s>=b*.98&&b>0?'<span class="st ok">مدفوع</span>':s>0?'<span class="st part">جزئي</span>':'<span class="st no">لم يُدفع</span>';
       const left=r2(b-s);
-      return `<div class="brow"><div class="n">${c.n} ${st}</div>
+      return `<div class="brow" data-act="cat" data-v="${c.id}" role="button" tabindex="0"><div class="n">${c.n} ${st}</div>
         <div class="r"><span class="num">${fmt(s)}</span> <span style="color:var(--muted)">/</span> ${budgetEditable('b:'+c.id,b)}</div>
         <div class="bar ${barCls(p)}"><i style="width:${Math.min(100,p*100)}%"></i></div>
         <div class="sub"><span>${left>=0?'متبقي <span class="num">'+fmt(left)+'</span>':'<span class="over">تجاوز <span class="num">'+fmt(-left)+'</span></span>'}</span><span>${pa!==null&&pa!==undefined&&pa!==0?ymLabel(prevYm(ym)).split(' ')[0]+': <span class="num">'+fmt(pa)+'</span>':''}</span></div></div>`;
@@ -566,7 +596,7 @@ function renderFunds(){
 function render(){
   const ae=document.activeElement; const keep=ae&&ae.id&&['q','f-a','f-n','f-d','be'].includes(ae.id)?{id:ae.id,v:ae.value,s:ae.selectionStart}:null;
   document.getElementById('hdr').innerHTML=renderHeader();
-  document.getElementById('main').innerHTML=S.tab==='log'?renderLog():S.tab==='budget'?renderBudget():renderFunds();
+  document.getElementById('main').innerHTML=S.tab==='log'?renderLog():S.tab==='budget'?(S.cat?renderCat():renderBudget()):renderFunds();
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.v===S.tab?'page':'false'));
   if(keep){ const el=document.getElementById(keep.id); if(el){ el.value=keep.v; el.focus(); try{el.setSelectionRange(keep.s,keep.s)}catch(e){} } }
   const be=document.getElementById('be'); if(be&&document.activeElement!==be){ be.focus(); be.select(); }
@@ -576,7 +606,9 @@ function render(){
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]'); if(!el) return;
   const a=el.dataset.act, v=el.dataset.v;
-  if(a==='tab'){ S.tab=v; S.editKey=null; render(); window.scrollTo(0,0); }
+  if(a==='tab'){ S.tab=v; S.cat=null; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
+  else if(a==='cat'){ S.cat=v; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
+  else if(a==='cat-back'){ S.cat=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
   else if(a==='mon'){ S.ym=v==='next'?nextYm(S.ym):prevYm(S.ym); S.editKey=null; render(); }
   else if(a==='anchor'){ S.anchorOpen=!S.anchorOpen; render(); if(S.anchorOpen) document.getElementById('anc-b').focus(); }
   else if(a==='anchor-save'){
@@ -625,6 +657,7 @@ function saveBudgetEdit(el){
 }
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter') return;
+  if(e.target.classList&&e.target.classList.contains('brow')){ e.target.click(); return; }
   if(e.target.id==='q'){ e.preventDefault(); quickAdd(); }
   else if(e.target.id==='be'){ e.preventDefault(); e.target.blur(); }
   else if(e.target.id==='anc-b'||e.target.id==='anc-q'){ e.preventDefault(); document.querySelector('[data-act="anchor-save"]').click(); }
