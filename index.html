@@ -248,9 +248,17 @@ const MONTHS_AR=['يناير','فبراير','مارس','أبريل','مايو',
 
 /* ---------- State ---------- */
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh'}).format(new Date());
-const S={cat:null,tx:[],cfgDoc:null,months:{},ready:false,ym:today().slice(0,7),tab:'log',
+const S={cat:null,tx:[],cfgDoc:null,months:{},ready:false,ym:today().slice(0,7),ymAuto:true,lastMonth:today().slice(0,7),tab:'log',
   f:null,editId:null,showForm:false,confirmDel:false,editKey:null,dup:null,anchorOpen:false,need:false};
 const blankForm=()=>({t:'expense',c:null,a:'',m:'bank',d:today(),n:''});
+// Keep the app on the current month when it stays open across a month change.
+function syncToday(){
+  const cur=today().slice(0,7);
+  if(S.lastMonth!==cur){ S.lastMonth=cur; if(S.ymAuto){ S.ym=cur; S.cat=null; } if(!S.showForm) S.f=blankForm(); render(); }
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncToday(); });
+window.addEventListener('focus',syncToday);
+setInterval(syncToday,60000);
 S.f=blankForm();
 const cfg=()=>Object.assign({},DEF_CONFIG,S.cfgDoc||{});
 
@@ -559,7 +567,7 @@ function renderBudget(){
     return `<section class="card"><h2>${g.n}<small class="num">${fmt(t.s)} / ${fmt(t.b)}</small></h2>${rows||'<div class="cg">لا شيء هذا الشهر.</div>'}${add}</section>`;
   };
   return `<section class="card sum">
-    <h2>المصروف الطبيعي<small>ثابتة + أقساط + متغيرة</small></h2>
+    <h2>المصروف الطبيعي — ${ymLabel(ym).split(' ')[0]}<small>ثابتة + أقساط + متغيرة</small></h2>
     <div class="big"><span class="v num">${fmt(nat.s)}</span><span class="of">الهدف ${budgetEditable('target',C.target)} · الميزانية <span class="num">${fmt(nat.b)}</span></span></div>
     <div class="bar ${barCls(natP)}"><i style="width:${Math.min(100,natP*100)}%"></i></div>
     ${nat.b>C.target?`<div class="cg" style="color:var(--warn)">مجموع الميزانيات أعلى من الهدف بـ <span class="num">${fmt(nat.b-C.target)}</span></div>`:''}
@@ -609,7 +617,7 @@ document.addEventListener('click',e=>{
   if(a==='tab'){ S.tab=v; S.cat=null; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
   else if(a==='cat'){ S.cat=v; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
   else if(a==='cat-back'){ S.cat=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
-  else if(a==='mon'){ S.ym=v==='next'?nextYm(S.ym):prevYm(S.ym); S.editKey=null; render(); }
+  else if(a==='mon'){ S.ym=v==='next'?nextYm(S.ym):prevYm(S.ym); S.ymAuto=S.ym===today().slice(0,7); S.editKey=null; render(); }
   else if(a==='anchor'){ S.anchorOpen=!S.anchorOpen; render(); if(S.anchorOpen) document.getElementById('anc-b').focus(); }
   else if(a==='anchor-save'){
     const bv=document.getElementById('anc-b').value.trim(), qv=document.getElementById('anc-q').value.trim();
@@ -625,7 +633,7 @@ document.addEventListener('click',e=>{
   else if(a==='logout') store.signOut();
   else if(a==='dup-yes'){ const t=S.dup; S.dup=null; commit(t,true); const q=document.getElementById('q'); if(q) q.value=''; if(S.showForm&&!S.editId){S.f=blankForm();S.showForm=false;} render(); }
   else if(a==='dup-no'){ S.dup=null; render(); }
-  else if(a==='toggle-form'){ S.showForm=!S.showForm; if(!S.showForm){S.editId=null;S.f=blankForm();S.confirmDel=false;} render(); }
+  else if(a==='toggle-form'){ S.showForm=!S.showForm; if(S.showForm&&!S.editId){ S.f=blankForm(); } if(!S.showForm){S.editId=null;S.f=blankForm();S.confirmDel=false;} render(); }
   else if(a==='ft'){ S.f.t=v; S.f.c=(SUBCATS[v]&&SUBCATS[v].length===1)?SUBCATS[v][0].id:null; render(); }
   else if(a==='fc'){ S.f.c=v; S.need=false; render(); }
   else if(a==='fm'){ S.f.m=v; render(); }
