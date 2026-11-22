@@ -15,6 +15,7 @@
 .brow .n::after{content:'‹';color:var(--muted);font-weight:400;margin-inline-start:auto}
 .cathead{display:flex;align-items:center;gap:10px;margin-top:14px}
 .back{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:20px;line-height:1;display:grid;place-items:center}
+.sortbar{display:flex;gap:6px;align-items:center;margin-top:14px;font-size:13px;color:var(--muted)}
 </style>
 <style>
 /* Layout: one narrow RTL column, sticky balance header, three tabs switched from a bottom bar. */
@@ -486,11 +487,11 @@ function renderForm(){
     </div></div>`;
 }
 const dayName=d=>{const dt=new Date(d+'T12:00:00+03:00'); return dt.toLocaleDateString('ar-SA-u-ca-gregory-nu-latn',{weekday:'long',day:'numeric',month:'long',timeZone:'Asia/Riyadh'});};
-function txRow(t,inCat){
+function txRow(t,inCat,withDate){
     const out=t.t==='expense'||t.t==='work'; const fund=t.t==='fund';
     const sign=fund?(t.a<0?'سحب':'حجز'):(out?'−':'+');
     const cls=fund||t.t==='transfer'?'mutedtx':(out?'':'pos');
-    const sub=[t.t!=='expense'?typeName(t.t):'',t.t!=='fund'&&t.t!=='transfer'?methodName(t.m):'',inCat?'':t.n].filter(Boolean).map(esc).join(' · ');
+    const sub=[withDate?dayName(t.d):'',t.t!=='expense'?typeName(t.t):'',t.t!=='fund'&&t.t!=='transfer'?methodName(t.m):'',inCat?'':t.n].filter(Boolean).map(esc).join(' · ');
     const title=inCat?(t.n||(t.t==='refund'?'استرداد':'بدون ملاحظة')):catName(t.t,t.c);
     return `<button class="tx ${S.editId===t.id?'sel':''}" data-act="edit" data-v="${t.id}">
       <div class="mid"><div class="t1">${esc(title)}</div><div class="t2">${sub||'&nbsp;'}</div></div>
@@ -532,7 +533,9 @@ function renderCat(){
     ${pa!==null&&pa!==undefined?`<div class="kv"><span>${ymLabel(prevYm(ym))}</span><span class="num">${fmt(pa)}</span></div>`:''}
   </section>
   ${S.showForm&&S.editId?`<section class="card">${renderForm()}</section>`:''}
-  ${days.length?days.map(d=>`<div class="day"><div class="dayh"><span>${dayName(d)}</span><span class="num">${fmt(byDay[d].reduce((x,t)=>x+(t.t==='refund'?-t.a:+t.a),0))}</span></div><div class="txl">${byDay[d].map(t=>txRow(t,true)).join('')}</div></div>`).join('')
+  ${list.length?`<div class="sortbar"><span>ترتيب:</span><button class="chip" data-act="csort" data-v="date" aria-pressed="${S.catSort!=='amt'}">الأحدث</button><button class="chip" data-act="csort" data-v="amt" aria-pressed="${S.catSort==='amt'}">الأكبر مبلغًا</button></div>`:''}
+  ${S.catSort==='amt'&&list.length?`<div class="txl" style="margin-top:10px">${list.slice().sort((a,b)=>(+b.a)-(+a.a)).map(t=>txRow(t,true,true)).join('')}</div>`:''}
+  ${S.catSort==='amt'?'':days.length?days.map(d=>`<div class="day"><div class="dayh"><span>${dayName(d)}</span><span class="num">${fmt(byDay[d].reduce((x,t)=>x+(t.t==='refund'?-t.a:+t.a),0))}</span></div><div class="txl">${byDay[d].map(t=>txRow(t,true)).join('')}</div></div>`).join('')
    :`<div class="empty">لا توجد عمليات في ${c.n} خلال ${ymLabel(ym)}.</div>`}`;
 }
 function barCls(p){ return p>1.001?'bad':p>.85?'warn':''; }
@@ -616,6 +619,7 @@ document.addEventListener('click',e=>{
   const a=el.dataset.act, v=el.dataset.v;
   if(a==='tab'){ S.tab=v; S.cat=null; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
   else if(a==='cat'){ S.cat=v; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
+  else if(a==='csort'){ S.catSort=v; render(); }
   else if(a==='cat-back'){ S.cat=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
   else if(a==='mon'){ S.ym=v==='next'?nextYm(S.ym):prevYm(S.ym); S.ymAuto=S.ym===today().slice(0,7); S.editKey=null; render(); }
   else if(a==='anchor'){ S.anchorOpen=!S.anchorOpen; render(); if(S.anchorOpen) document.getElementById('anc-b').focus(); }
