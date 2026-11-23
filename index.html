@@ -16,6 +16,11 @@
 .cathead{display:flex;align-items:center;gap:10px;margin-top:14px}
 .back{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:20px;line-height:1;display:grid;place-items:center}
 .sortbar{display:flex;gap:6px;align-items:center;margin-top:14px;font-size:13px;color:var(--muted)}
+.tagadd{display:flex;gap:8px;margin-top:8px}.tagadd .inp{flex:1;min-width:0}
+.tagchip{direction:ltr;unicode-bidi:plaintext}
+.cnt{color:var(--muted);font-size:11.5px;margin-inline-start:2px}
+.chip[aria-pressed="true"] .cnt{color:inherit;opacity:.8}
+.conv{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
 </style>
 <style>
 /* Layout: one narrow RTL column, sticky balance header, three tabs switched from a bottom bar. */
@@ -150,7 +155,7 @@ h2 small{font-family:var(--f-body);font-weight:500;font-size:13px;color:var(--mu
 .fund .ctl .btn{height:40px;padding:0 12px}
 
 nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)}
-nav.tabs div{display:grid;grid-template-columns:repeat(3,1fr);width:100%;max-width:560px}
+nav.tabs div{display:grid;grid-template-columns:repeat(4,1fr);width:100%;max-width:560px}
 nav.tabs button{all:unset;cursor:pointer;text-align:center;padding:10px 0 12px;font-size:13px;color:var(--muted);font-weight:500;display:flex;flex-direction:column;align-items:center;gap:3px}
 nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
 nav.tabs button[aria-current="page"]{color:var(--accent);font-weight:700}
@@ -178,6 +183,7 @@ nav.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:-4p
 <nav class="tabs" aria-label="الأقسام"><div>
   <button data-act="tab" data-v="log"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>السجل</button>
   <button data-act="tab" data-v="budget"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>الميزانية</button>
+  <button data-act="tab" data-v="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>بحث</button>
   <button data-act="tab" data-v="funds"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>الصناديق</button>
 </div></nav>
 <div id="toast" class="toast" hidden></div>
@@ -251,7 +257,7 @@ const MONTHS_AR=['يناير','فبراير','مارس','أبريل','مايو',
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh'}).format(new Date());
 const S={cat:null,tx:[],cfgDoc:null,months:{},ready:false,ym:today().slice(0,7),ymAuto:true,lastMonth:today().slice(0,7),tab:'log',
   f:null,editId:null,showForm:false,confirmDel:false,editKey:null,dup:null,anchorOpen:false,need:false};
-const blankForm=()=>({t:'expense',c:null,a:'',m:'bank',d:today(),n:''});
+const blankForm=()=>({t:'expense',c:null,a:'',m:'bank',d:today(),n:'',g:[]});
 // Keep the app on the current month when it stays open across a month change.
 function syncToday(){
   const cur=today().slice(0,7);
@@ -378,6 +384,32 @@ function hasKw(text,tokens,kw){
   if(kw.includes(' ')) return (' '+text+' ').includes(' '+kw+' ')||(' '+text+' ').includes(' ال'+kw+' ');
   return tokens.some(tk=>tk===kw||tk==='ال'+kw||tk==='بال'+kw||tk==='لل'+kw||tk==='و'+kw||tk==='وال'+kw||tk==='ب'+kw||tk==='لل'+kw.replace(/^ال/,''));
 }
+/* ---------- Tags ---------- */
+const tkey=x=>norm(toLatin(String(x||''))).replace(/[_#]/g,' ').replace(/\s+/g,' ').trim();
+let _tagCache=null,_tagSig='';
+function tagIndex(){
+  const sig=S.tx.length+':'+S.tx.reduce((n,t)=>n+((t.g||[]).length),0)+':'+(S.tx[S.tx.length-1]||{}).id;
+  if(_tagCache&&_tagSig===sig) return _tagCache;
+  const m={};
+  for(const t of S.tx) for(const g of (t.g||[])){ const k=tkey(g); if(!k) continue; const e=m[k]||(m[k]={count:0,names:{}}); e.count++; e.names[g]=(e.names[g]||0)+1; }
+  for(const k in m){ m[k].name=Object.entries(m[k].names).sort((a,b)=>b[1]-a[1])[0][0]; }
+  _tagCache=m; _tagSig=sig; return m;
+}
+const tagList=()=>Object.entries(tagIndex()).map(([k,e])=>({k,name:e.name,count:e.count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
+function canonTag(name){ const k=tkey(name); const e=tagIndex()[k]; return e?e.name:String(name).replace(/[_#]/g,' ').replace(/\s+/g,' ').trim(); }
+function detectTags(raw){
+  const out=[]; const lat=toLatin(raw);
+  (lat.match(/#[^\s#]+/g)||[]).forEach(h=>{ const n=canonTag(h.slice(1)); if(n&&!out.some(o=>tkey(o)===tkey(n))) out.push(n); });
+  const txt=' '+tkey(lat.replace(/#[^\s#]+/g,' ').replace(/\d+(?:\.\d+)?/g,' '))+' ';
+  for(const tg of tagList()) if(txt.includes(' '+tg.k+' ')&&!out.some(o=>tkey(o)===tg.k)) out.push(tg.name);
+  return out;
+}
+function stripTags(note,tags){
+  let n=String(note||'').replace(/#[^\s#]+/g,' ');
+  for(const tg of tags){ const words=tkey(tg).split(' '); n=n.split(/\s+/).filter(w=>!words.includes(tkey(w))).join(' '); }
+  return n.replace(/\s+/g,' ').trim();
+}
+const hasTag=(t,k)=>(t.g||[]).some(g=>tkey(g)===k);
 function parse(raw){
   const lat=toLatin(raw); const m=lat.match(/\d+(?:\.\d+)?/);
   const a=m?parseFloat(m[0]):null;
@@ -402,6 +434,7 @@ function parse(raw){
   for(const c of CATS) for(const k of c.k){ const nk=norm(k); if(nk.length>len&&has(k)){best=c.id;len=nk.length;} }
   r.c=best; return r;
 }
+function parseFull(raw){ const g=detectTags(raw); const r=parse(stripTags(toLatin(raw),g)||raw); r.g=g; r.note=stripTags(r.note,g); const cw=r.c&&CAT[r.c]?r.c:null; if(cw&&r.note){ const ks=CAT[cw].k.map(norm); r.note=r.note.split(/\s+/).filter(w=>!ks.includes(norm(w))&&!ks.includes(norm(w).replace(/^ال/,''))).join(' '); } return r; }
 const catName=(t,c)=>{ if(t==='expense'||t==='refund') return CAT[c]?CAT[c].n:'بدون فئة'; if(t==='fund'){const f=cfg().funds.find(x=>x.id===c);return f?f.n:c;} const l=SUBCATS[t]||[]; const x=l.find(y=>y.id===c); return x?x.n:c; };
 const typeName=t=>t==='fund'?'حجز':(TYPES.find(x=>x.id===t)||{}).n||t;
 const methodName=m=>(METHODS.find(x=>x.id===m)||{}).n||'';
@@ -427,15 +460,15 @@ function saveForm(){
   if(!(a>0)){ toast('اكتب المبلغ.'); return; }
   if(!f.c){ S.need=true; render(); toast('اختر الفئة.'); return; }
   const old=S.editId?S.tx.find(x=>x.id===S.editId):null;
-  const t={id:S.editId||uid(),d:f.d||today(),a:r2(a),c:f.c,t:f.t,m:f.t==='transfer'?'bank':f.m,n:f.n.trim(),ts:old?old.ts:Date.now()};
+  const t={id:S.editId||uid(),d:f.d||today(),a:r2(a),c:f.c,t:f.t,m:f.t==='transfer'?'bank':f.m,n:f.n.trim(),g:(f.g||[]).slice(),ts:old?old.ts:Date.now()};
   if(commit(t,false)){ S.f=blankForm(); S.editId=null; S.showForm=false; S.confirmDel=false; S.need=false; render(); }
 }
 function quickAdd(){
   const el=document.getElementById('q'); if(!el) return; const raw=el.value.trim(); if(!raw) return;
-  const p=parse(raw);
+  const p=parseFull(raw);
   if(!(p.a>0)){ toast('ما لقيت مبلغ. اكتب مثل: بقالة 120'); return; }
-  if(!p.c){ S.f=Object.assign(blankForm(),{a:String(p.a),t:p.t,m:p.m,n:p.note}); S.showForm=true; S.need=true; el.value=''; render(); toast('اختر الفئة ثم سجّل.'); return; }
-  const t={id:uid(),d:today(),a:r2(p.a),c:p.c,t:p.t,m:p.m,n:p.note,ts:Date.now()};
+  if(!p.c){ S.f=Object.assign(blankForm(),{a:String(p.a),t:p.t,m:p.m,n:p.note,g:p.g}); S.showForm=true; S.need=true; el.value=''; render(); toast('اختر الفئة ثم سجّل.'); return; }
+  const t={id:uid(),d:today(),a:r2(p.a),c:p.c,t:p.t,m:p.m,n:p.note,g:p.g,ts:Date.now()};
   if(commit(t,false)) el.value='';
   render();
 }
@@ -462,6 +495,14 @@ function renderHeader(){
     <button class="btn pri" data-act="anchor-save">اعتماد</button></div>`:''}`;
 }
 function chips(list,cur,act){ return `<div class="chips">${list.map(x=>`<button class="chip" data-act="${act}" data-v="${x.id}" aria-pressed="${x.id===cur}">${esc(x.n)}</button>`).join('')}</div>`; }
+function formTagChips(filter){
+  const sel=S.f.g||[]; const fk=tkey(filter);
+  let pool=tagList().filter(x=>!sel.some(g=>tkey(g)===x.k));
+  if(fk) pool=pool.filter(x=>x.k.includes(fk)); else pool=pool.slice(0,14);
+  const chip=(name,on)=>`<button class="chip tagchip" data-act="ftag" data-v="${esc(encodeURIComponent(name))}" aria-pressed="${on}">#${esc(name)}</button>`;
+  const html=sel.map(g=>chip(g,true)).join('')+pool.map(x=>chip(x.name,false)).join('');
+  return html?`<div class="chips">${html}</div>`:(fk?'':'<div class="cg">لا توجد وسوم بعد. اكتب أول وسم بالأسفل.</div>');
+}
 function renderForm(){
   const f=S.f;
   const et=S.editId?S.tx.find(x=>x.id===S.editId):null;
@@ -479,6 +520,8 @@ function renderForm(){
     <div><div class="fl">النوع</div>${chips(TYPES,f.t,'ft')}</div>
     <div class="${S.need&&!f.c?'need':''}"><div class="fl">الفئة</div>${catHtml}</div>
     ${f.t!=='transfer'?`<div><div class="fl">طريقة الدفع</div>${chips(METHODS,f.m,'fm')}</div>`:''}
+    ${f.t!=='transfer'?`<div><div class="fl">الوسوم (المحل أو الجهة)</div><div id="ftags">${formTagChips('')}</div>
+      <div class="tagadd"><input id="f-tg" class="inp" placeholder="اكتب وسمًا، مثل Amazon now" autocomplete="off"><button class="btn" data-act="ftag-add">إضافة</button></div></div>`:''}
     <div><div class="fl">ملاحظة</div><input id="f-n" class="inp" value="${esc(f.n)}" placeholder="اختياري"></div>
     <div class="actions">
       <button class="btn pri" data-act="save">${S.editId?'حفظ التعديل':'سجّل'}</button>
@@ -491,8 +534,9 @@ function txRow(t,inCat,withDate){
     const out=t.t==='expense'||t.t==='work'; const fund=t.t==='fund';
     const sign=fund?(t.a<0?'سحب':'حجز'):(out?'−':'+');
     const cls=fund||t.t==='transfer'?'mutedtx':(out?'':'pos');
-    const sub=[withDate?dayName(t.d):'',t.t!=='expense'?typeName(t.t):'',t.t!=='fund'&&t.t!=='transfer'?methodName(t.m):'',inCat?'':t.n].filter(Boolean).map(esc).join(' · ');
-    const title=inCat?(t.n||(t.t==='refund'?'استرداد':'بدون ملاحظة')):catName(t.t,t.c);
+    const tg=(t.g||[]).map(g=>'\u2068#'+g+'\u2069').join(' ');
+    const sub=[withDate?dayName(t.d):'',t.t!=='expense'?typeName(t.t):'',t.t!=='fund'&&t.t!=='transfer'?methodName(t.m):'',inCat&&!tg?'':t.n,inCat?'':tg].filter(Boolean).map(esc).join(' · ');
+    const title=inCat?((t.g&&t.g.length?t.g.join('، '):t.n)||(t.t==='refund'?'استرداد':'بدون ملاحظة')):catName(t.t,t.c);
     return `<button class="tx ${S.editId===t.id?'sel':''}" data-act="edit" data-v="${t.id}">
       <div class="mid"><div class="t1">${esc(title)}</div><div class="t2">${sub||'&nbsp;'}</div></div>
       <div class="amt num ${cls}">${fund?sign+' '+fmt(Math.abs(t.a)):sign+fmt(t.a)}</div></button>`;
@@ -505,7 +549,7 @@ function renderLog(){
   const dname=dayName, row=t=>txRow(t,false);
   return `<section class="card">
     <div class="quick"><input id="q" placeholder="بقالة 120" enterkeyhint="done" autocomplete="off" aria-label="إضافة سريعة"><button class="btn pri" data-act="quick">سجّل</button></div>
-    <div class="preview" id="pv"><span>اكتب الفئة والمبلغ. أضف «تيقمو» أو «كريدت» أو «كاش» إذا لم يكن من البنك.</span></div>
+    <div class="preview" id="pv"><span>اكتب الفئة والمبلغ. أضف «تيقمو» أو «كريدت» أو «كاش» إذا لم يكن من البنك، و#وسم للمحل.</span></div>
     ${S.dup?`<div class="dup"><span>عملية مطابقة مسجّلة في نفس اليوم: ${esc(catName(S.dup.t,S.dup.c))} ${fmt(S.dup.a)}</span><span style="display:flex;gap:12px"><button class="linkbtn" data-act="dup-yes">سجّلها مرة ثانية</button><button class="linkbtn" data-act="dup-no">تجاهل</button></span></div>`:''}
     <div style="margin-top:8px"><button class="linkbtn" data-act="toggle-form">${S.showForm?'إخفاء التفاصيل':'إدخال بالتفاصيل'}</button></div>
     ${S.showForm?renderForm():''}
@@ -537,6 +581,47 @@ function renderCat(){
   ${S.catSort==='amt'&&list.length?`<div class="txl" style="margin-top:10px">${list.slice().sort((a,b)=>(+b.a)-(+a.a)).map(t=>txRow(t,true,true)).join('')}</div>`:''}
   ${S.catSort==='amt'?'':days.length?days.map(d=>`<div class="day"><div class="dayh"><span>${dayName(d)}</span><span class="num">${fmt(byDay[d].reduce((x,t)=>x+(t.t==='refund'?-t.a:+t.a),0))}</span></div><div class="txl">${byDay[d].map(t=>txRow(t,true)).join('')}</div></div>`).join('')
    :`<div class="empty">لا توجد عمليات في ${c.n} خلال ${ymLabel(ym)}.</div>`}`;
+}
+function matchTx(t,q){
+  const ql=toLatin(q).trim(); const numStr=ql.replace(/[,\s،]/g,'');
+  if(/^\d+(\.\d+)?$/.test(numStr)){ const n=parseFloat(numStr), a=Math.abs(+t.a); return numStr.includes('.')?r2(a)===r2(n):Math.floor(a+1e-9)===n; }
+  const k=tkey(ql); if(!k) return true;
+  return tkey([t.n,(t.g||[]).join(' '),catName(t.t,t.c)].join(' ')).includes(k);
+}
+function repeatedNotes(){
+  const tags=tagIndex(), m={};
+  for(const t of S.tx){ if(!t.n||(t.g&&t.g.length)) continue; const k=tkey(t.n); if(!k||k.length>40||tags[k]) continue; const e=m[k]||(m[k]={count:0,names:{}}); e.count++; e.names[t.n.trim()]=(e.names[t.n.trim()]||0)+1; }
+  return Object.entries(m).filter(([k,e])=>e.count>=2).map(([k,e])=>({k,count:e.count,name:Object.entries(e.names).sort((a,b)=>b[1]-a[1])[0][0]})).sort((a,b)=>b.count-a.count).slice(0,8);
+}
+function renderSearch(){
+  const q=S.sq||'', tag=S.stag||null, tags=tagList();
+  const active=q.trim()||tag;
+  const res=active?S.tx.filter(t=>t.t!=='fund'&&(!tag||hasTag(t,tag))&&(!q.trim()||matchTx(t,q))).sort((a,b)=>(b.d||'').localeCompare(a.d||'')||(b.ts||0)-(a.ts||0)):[];
+  const out=res.reduce((x,t)=>x+(t.t==='expense'?+t.a:t.t==='refund'?-t.a:0),0);
+  const byM={}; res.forEach(t=>(byM[(t.d||'').slice(0,7)]=byM[(t.d||'').slice(0,7)]||[]).push(t));
+  const rep=repeatedNotes();
+  const tagChip=x=>`<button class="chip tagchip" data-act="stag" data-v="${esc(x.k)}" aria-pressed="${tag===x.k}">#${esc(x.name)} <span class="num cnt">${x.count}</span></button>`;
+  return `<section class="card">
+    <div class="quick"><input id="sq" type="search" value="${esc(q)}" placeholder="ابحث: 1,350 أو amazon now" autocomplete="off" aria-label="بحث"></div>
+    <div class="cg" style="margin-top:8px">البحث في كل الأشهر. المبلغ يطابق الرقم بالضبط، والاسم يبحث في الوسوم والملاحظات والفئات.</div>
+    ${tags.length?`<div class="fl" style="margin-top:10px">الوسوم</div><div class="chips">${tags.map(tagChip).join('')}</div>`:''}
+    ${rep.length?`<div class="conv"><div class="fl">أسماء مكررة في الملاحظات. حوّلها لوسوم بضغطة:</div><div class="chips">${rep.map(r=>`<button class="chip" data-act="mktag" data-v="${esc(r.k)}">+ #${esc(r.name)} <span class="num cnt">${r.count}</span></button>`).join('')}</div></div>`:''}
+  </section>
+  ${S.showForm&&S.editId?`<section class="card">${renderForm()}</section>`:''}
+  ${!active?`<div class="empty">اكتب مبلغًا أو اسمًا، أو اختر وسمًا.</div>`
+   :res.length?`<section class="card sum"><div class="big"><span class="v num">${fmt(out)}</span><span class="of">${res.length} عملية</span></div></section>
+   ${Object.keys(byM).sort().reverse().map(m=>`<div class="day"><div class="dayh"><span>${ymLabel(m)}</span><span class="num">${fmt(byM[m].reduce((x,t)=>x+(t.t==='expense'?+t.a:t.t==='refund'?-t.a:0),0))}</span></div><div class="txl">${byM[m].map(t=>txRow(t,false,true)).join('')}</div></div>`).join('')}`
+   :`<div class="empty">لا توجد نتائج.</div>`}`;
+}
+function makeTag(k){
+  const r=repeatedNotes().find(x=>x.k===k); if(!r) return;
+  const name=r.name; let n=0;
+  for(const t of S.tx.slice()){
+    if(t.t==='fund'||hasTag(t,k)) continue;
+    const nk=tkey(t.n); if(!nk||!(' '+nk+' ').includes(' '+k+' ')) continue;
+    const u=Object.assign({},t,{g:(t.g||[]).concat([name]),n:nk===k?'':t.n}); store.putTx(u); n++;
+  }
+  toast('أُضيف الوسم \u2068#'+name+'\u2069 إلى '+n+' عملية.');
 }
 function barCls(p){ return p>1.001?'bad':p>.85?'warn':''; }
 function budgetEditable(key,val){
@@ -605,9 +690,9 @@ function renderFunds(){
   <div style="text-align:center;margin-top:18px"><button class="linkbtn" data-act="logout" style="color:var(--muted);font-weight:500">تسجيل الخروج</button></div>`;
 }
 function render(){
-  const ae=document.activeElement; const keep=ae&&ae.id&&['q','f-a','f-n','f-d','be'].includes(ae.id)?{id:ae.id,v:ae.value,s:ae.selectionStart}:null;
+  const ae=document.activeElement; const keep=ae&&ae.id&&['q','f-a','f-n','f-d','be','sq','f-tg'].includes(ae.id)?{id:ae.id,v:ae.value,s:ae.selectionStart}:null;
   document.getElementById('hdr').innerHTML=renderHeader();
-  document.getElementById('main').innerHTML=S.tab==='log'?renderLog():S.tab==='budget'?(S.cat?renderCat():renderBudget()):renderFunds();
+  document.getElementById('main').innerHTML=S.tab==='log'?renderLog():S.tab==='budget'?(S.cat?renderCat():renderBudget()):S.tab==='search'?renderSearch():renderFunds();
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.v===S.tab?'page':'false'));
   if(keep){ const el=document.getElementById(keep.id); if(el){ el.value=keep.v; el.focus(); try{el.setSelectionRange(keep.s,keep.s)}catch(e){} } }
   const be=document.getElementById('be'); if(be&&document.activeElement!==be){ be.focus(); be.select(); }
@@ -619,6 +704,10 @@ document.addEventListener('click',e=>{
   const a=el.dataset.act, v=el.dataset.v;
   if(a==='tab'){ S.tab=v; S.cat=null; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
   else if(a==='cat'){ S.cat=v; S.editKey=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
+  else if(a==='ftag'){ const name=decodeURIComponent(v); const k=tkey(name); const g=S.f.g||[]; S.f.g=g.some(x=>tkey(x)===k)?g.filter(x=>tkey(x)!==k):g.concat([name]); render(); }
+  else if(a==='ftag-add'){ addFormTag(); }
+  else if(a==='stag'){ S.stag=S.stag===v?null:v; S.editId=null; S.showForm=false; render(); }
+  else if(a==='mktag'){ makeTag(v); }
   else if(a==='csort'){ S.catSort=v; render(); }
   else if(a==='cat-back'){ S.cat=null; S.editId=null; S.showForm=false; render(); window.scrollTo(0,0); }
   else if(a==='mon'){ S.ym=v==='next'?nextYm(S.ym):prevYm(S.ym); S.ymAuto=S.ym===today().slice(0,7); S.editKey=null; render(); }
@@ -646,7 +735,7 @@ document.addEventListener('click',e=>{
   else if(a==='del'){ if(!S.confirmDel){S.confirmDel=true;render();return;} store.delTx(S.editId); S.editId=null; S.f=blankForm(); S.showForm=false; S.confirmDel=false; toast('حُذفت العملية.'); render(); }
   else if(a==='edit'){
     const t=S.tx.find(x=>x.id===v); if(!t) return;
-    S.editId=t.id; S.f={t:t.t==='fund'?'expense':t.t,c:t.t==='fund'?null:t.c,a:String(t.a),m:t.m||'bank',d:t.d,n:t.n||''}; S.showForm=true; S.confirmDel=false;
+    S.editId=t.id; S.f={t:t.t==='fund'?'expense':t.t,c:t.t==='fund'?null:t.c,a:String(t.a),m:t.m||'bank',d:t.d,n:t.n||'',g:(t.g||[]).slice()}; S.showForm=true; S.confirmDel=false;
     render(); document.getElementById('form').scrollIntoView({block:'center',behavior:'smooth'});
   }
   else if(a==='bedit'){ S.editKey=v; render(); }
@@ -658,6 +747,12 @@ document.addEventListener('click',e=>{
     setTimeout(()=>toast((s>0?'حُجز ':'سُحب ')+fmt(n)+' · المتاح للصرف '+fmt(balances().b-reserved())),60);
   }
 });
+function addFormTag(){
+  const el=document.getElementById('f-tg'); if(!el) return; const raw=el.value.trim(); if(!raw) return;
+  const name=canonTag(raw); const k=tkey(name);
+  if(!(S.f.g||[]).some(x=>tkey(x)===k)) S.f.g=(S.f.g||[]).concat([name]);
+  el.value=''; render(); const n=document.getElementById('f-tg'); if(n) n.focus();
+}
 function saveBudgetEdit(el){
   const key=el.dataset.key; const n=parseFloat(toLatin(el.value)); S.editKey=null;
   if(isNaN(n)||n<0){ render(); return; }
@@ -673,20 +768,23 @@ document.addEventListener('keydown',e=>{
   if(e.target.id==='q'){ e.preventDefault(); quickAdd(); }
   else if(e.target.id==='be'){ e.preventDefault(); e.target.blur(); }
   else if(e.target.id==='anc-b'||e.target.id==='anc-q'){ e.preventDefault(); document.querySelector('[data-act="anchor-save"]').click(); }
+  else if(e.target.id==='f-tg'){ e.preventDefault(); addFormTag(); }
   else if(['f-a','f-n'].includes(e.target.id)){ e.preventDefault(); saveForm(); }
 });
 document.addEventListener('focusout',e=>{ if(e.target.id==='be') saveBudgetEdit(e.target); });
 document.addEventListener('input',e=>{
   const id=e.target.id;
+  if(id==='sq'){ S.sq=e.target.value; render(); return; }
+  if(id==='f-tg'){ const box=document.getElementById('ftags'); if(box) box.innerHTML=formTagChips(e.target.value); return; }
   if(id==='f-a') S.f.a=e.target.value; else if(id==='f-n') S.f.n=e.target.value; else if(id==='f-d') S.f.d=e.target.value;
   else if(id==='q'){
     const pv=document.getElementById('pv'); const raw=e.target.value.trim(); if(!pv) return;
     if(!raw){ pv.innerHTML='<span>اكتب الفئة والمبلغ. أضف «تيقمو» أو «كريدت» أو «كاش» إذا لم يكن من البنك.</span>'; return; }
-    const p=parse(raw);
+    const p=parseFull(raw);
     pv.innerHTML=[ p.t!=='expense'?`<span class="tag">${typeName(p.t)}</span>`:'',
       p.c?`<span class="tag acc">${esc(catName(p.t,p.c))}</span>`:`<span class="tag warn">الفئة غير معروفة — ستختارها</span>`,
       p.a?`<span class="tag num">${fmt(p.a)}</span>`:`<span class="tag warn">بدون مبلغ</span>`,
-      p.t!=='transfer'?`<span class="tag">${methodName(p.m)}</span>`:'' ].join('');
+      p.t!=='transfer'?`<span class="tag">${methodName(p.m)}</span>`:'', ...(p.g||[]).map(g=>`<span class="tag acc">#${esc(g)}</span>`) ].join('');
   }
 });
 render();
